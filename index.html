@@ -36,7 +36,11 @@
   .stage .ph{position:absolute;inset:0;background-size:cover;background-repeat:no-repeat;opacity:0;transform:scale(1.03);transition:opacity 1s ease,transform 6s ease-out}
   .stage .ph.show{opacity:1;transform:none}
   .stage::after{content:"";position:absolute;inset:0;background:rgba(0,0,0,.2)}
-  @media (max-width:600px){ .stage::after{background:rgba(0,0,0,.32)} }   /* phones: a touch darker for legibility */
+  @media (max-width:600px){   /* phones: a touch darker and softly blurred for legibility */
+    .stage::after{background:rgba(0,0,0,.32)}
+    .stage .ph{filter:blur(6px);transform:scale(1.1)}
+    .stage .ph.show{transform:scale(1.07)}
+  }
   .app{position:relative;z-index:1}
   .top h1,.digits,.status,.label,.scene span{text-shadow:0 1px 18px rgba(0,0,0,.28)}
   button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
