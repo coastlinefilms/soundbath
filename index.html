@@ -486,36 +486,68 @@ function drive(param, base, amount, kind, phase, dir, freq, n=1){
   o.setPeriodicWave(wave(kind,phase,dir,n)); o.frequency.value=freq; g.gain.value=amount;
   o.connect(g).connect(param); o.start(); orbiters.push(o); return o;
 }
-function makeOrbitGroup(space, k, total){
+/* Every layer gets its own place and path around your head.
+   Height comes from what the sound is (birds and chimes up high, bubbles and fire low);
+   shape, speed and direction differ per layer, so sounds keep crossing and passing each other. */
+const HIGH=new Set(['birds','sails','chimes','loons','tropical','hush','thunder','stormwind']);
+const LOW =new Set(['bubbles','fire','space','under','cabin','lapping','coffee','train','surface']);
+const SHAPES=['circle','eight','halo','ellipse','sway','circle','eight','ellipse'];
+function pathFor(id, idx){
+  const height = HIGH.has(id) ? .9 : LOW.has(id) ? -.55 : .05;
+  const shape  = SHAPES[(idx*5+3)%SHAPES.length];
+  const period = 11 + ((idx*7)%9)*2.4;          /* 11 to 30 s per lap, all different */
+  const dir    = idx%2 ? 1 : -1;
+  const phase  = (idx*2.399963)%(2*Math.PI);    /* golden-angle start points: evenly scattered */
+  return {height, shape, period, dir, phase};
+}
+/* x,z,y as oscillator specs: [kind, harmonic, amplitude] around a centre height */
+function shapeSpec(shape, r){
+  switch(shape){
+    case 'eight':   return {x:['sin',1,r*1.1], z:['sin',2,-r*.8], y:['sin',1,.25]};    /* figure eight: crosses in front and behind */
+    case 'halo':    return {x:['sin',1,r*.8],  z:['cos',1,-r*.8], y:['cos',1,.45]};    /* tilted ring, dips in front, rises behind */
+    case 'ellipse': return {x:['sin',1,r*1.35],z:['cos',1,-r*.6], y:['sin',2,.2]};     /* wide side-to-side ellipse */
+    case 'sway':    return {x:['sin',1,r*1.2], z:['cos',2, r*.5], y:['sin',1,.3]};     /* swings ear to ear, arcing back over the head */
+    default:        return {x:['sin',1,r*1.05],z:['cos',1,-r*.95],y:['sin',3,.25]};    /* circle with a gentle bob */
+  }
+}
+function makeLayerOrbit(space, id, idx){
   const input=ctx.createGain(), out=ctx.createGain(); out.connect(space);
-  const period=[19,24,15,28][k%4], dir=k%2?1:-1, phase=2*Math.PI*k/Math.max(1,total), f=1/period, spread=35*Math.PI/180, rad=1.5;
-  /* centred bass: two cascaded low-passes = 24 dB/oct crossover */
+  const P=pathFor(id, idx), S=shapeSpec(P.shape, 1.5), f=1/P.period, spread=32*Math.PI/180;
   const lo1=F('lowpass',200,.707), lo2=F('lowpass',200,.707), loG=G(.9); input.connect(lo1).connect(lo2).connect(loG).connect(out);
-  /* distance: a touch louder at the sides, softer front and back */
-  const dist=G(1); drive(dist.gain, .9, -.1, 'cos', phase, dir, f, 2); dist.connect(out);
+  const dist=G(1); drive(dist.gain, .9, -.1, 'cos', P.phase, P.dir, f, 2); dist.connect(out);
   const split=ctx.createChannelSplitter(2); input.connect(split);
   [-1,1].forEach((side,ch)=>{
     const hp1=F('highpass',200,.707), hp2=F('highpass',200,.707), shade=F('lowpass',11000,.5);
     const p=ctx.createPanner(); p.panningModel='HRTF'; p.distanceModel='inverse'; p.refDistance=1; p.rolloffFactor=0;
-    const a=phase+side*spread;
+    const a=P.phase+side*spread;
     split.connect(hp1,ch); hp1.connect(hp2).connect(shade).connect(p).connect(dist);
-    drive(shade.frequency, 10500, 7500, 'cos', a, dir, f);                 /* 18 kHz in front, 3 kHz behind */
+    /* darker when the z path puts it behind you (z positive), brighter in front */
+    const zr=Math.abs(S.z[2])||1; drive(shade.frequency, 10500, -7500*S.z[2]/zr, S.z[0], a, P.dir, f, S.z[1]);
     if (p.positionX){
-      drive(p.positionX, 0, rad*1.08, 'sin', a, dir, f);                   /* x: right is positive */
-      drive(p.positionZ, 0, -rad*.92, 'cos', a, dir, f);                   /* z: front is negative */
-      drive(p.positionY, 0, .35, 'sin', a, dir, f/3);                      /* slow rise and fall */
+      drive(p.positionX, 0, S.x[2], S.x[0], a, P.dir, f, S.x[1]);
+      drive(p.positionZ, 0, S.z[2], S.z[0], a, P.dir, f, S.z[1]);
+      drive(p.positionY, P.height, S.y[2], S.y[0], a, P.dir, f, S.y[1]);
     } else {
-      const t0=ctx.currentTime, id=setInterval(()=>{ const t=dir*2*Math.PI*f*(ctx.currentTime-t0)+a; p.setPosition(Math.sin(t)*rad*1.08,.35*Math.sin(t/3),-Math.cos(t)*rad*.92); },40);
-      orbiters.push({stop:()=>clearInterval(id)});
+      const fn=(k,n,t)=>k==='sin'?Math.sin(n*t):Math.cos(n*t), t0=ctx.currentTime;
+      const id2=setInterval(()=>{ const t=P.dir*2*Math.PI*f*(ctx.currentTime-t0)+a;
+        p.setPosition(S.x[2]*fn(S.x[0],S.x[1],t), P.height+S.y[2]*fn(S.y[0],S.y[1],t), S.z[2]*fn(S.z[0],S.z[1],t)); },40);
+      orbiters.push({stop:()=>clearInterval(id2)});
     }
   });
   return input;
 }
-function orbitGroups(space, n){ const count=Math.min(4,n), list=[]; for (let k=0;k<count;k++) list.push(makeOrbitGroup(space,k,count)); return list; }
+/* build a layer's 3D chain only when it's actually audible in 8D (keeps phones light) */
+function ensure8D(id){
+  if (!active || !immersive) return;
+  const L=active.layers[id]; if (!L || L.orbit || level(active.key,id)<=0) return;
+  L.orbit=makeLayerOrbit(active.space, id, L.idx); L.wet.connect(L.orbit);
+}
+
 function setImmersive(on){
   immersive=on; try{ localStorage.setItem('ss1_8d',on?'1':'0'); }catch(e){}
   $('imm').setAttribute('aria-checked',on);
-  if (active) Object.values(active.layers).forEach(l=>{ l.dry.gain.setTargetAtTime(on?0:1,ctx.currentTime,.25); l.wet.gain.setTargetAtTime(on?1:0,ctx.currentTime,.25); });
+  if (active){ if (on) Object.keys(active.layers).forEach(ensure8D);
+    Object.values(active.layers).forEach(l=>{ l.dry.gain.setTargetAtTime(on?0:1,ctx.currentTime,.25); l.wet.gain.setTargetAtTime(on?1:0,ctx.currentTime,.25); }); }
 }
 
 function startSound(){
@@ -524,16 +556,16 @@ function startSound(){
   stopSound(true);
   const bus=ctx.createGain(); bus.gain.value=0; bus.connect(master);
   const layers={};
-  const space=makeSpace(bus), groups=orbitGroups(space, SCENES[sceneKey].layers.length);
+  const space=makeSpace(bus);
   SCENES[sceneKey].layers.forEach((l,i)=>{
     const g=ctx.createGain(); g.gain.value=level(sceneKey,l.id);
     const dry=ctx.createGain(), wet=ctx.createGain(); dry.gain.value=immersive?0:1; wet.gain.value=immersive?1:0;
-    g.connect(dry).connect(bus);
-    g.connect(wet).connect(groups[i%groups.length]);
-    layers[l.id]={g,dry,wet,run:runLayer(l,g)};
+    g.connect(dry).connect(bus); g.connect(wet);
+    layers[l.id]={g,dry,wet,idx:i,orbit:null,run:runLayer(l,g)};
   });
   bus.gain.setTargetAtTime(1,ctx.currentTime,.5);
-  active={key:sceneKey,bus,layers}; playing=true; paintStatus();
+  active={key:sceneKey,bus,space,layers}; playing=true; paintStatus();
+  Object.keys(layers).forEach(ensure8D);
 }
 function stopSound(swap){
   if (active){
@@ -546,7 +578,7 @@ function stopSound(swap){
 }
 const toggleSound = () => playing ? stopSound() : startSound();
 function setLevel(id){
-  if (active && active.key===sceneKey) active.layers[id].g.gain.setTargetAtTime(level(sceneKey,id),ctx.currentTime,.05);
+  if (active && active.key===sceneKey){ active.layers[id].g.gain.setTargetAtTime(level(sceneKey,id),ctx.currentTime,.05); ensure8D(id); }
   store('mixes',mixes);
 }
 
