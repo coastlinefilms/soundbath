@@ -104,8 +104,14 @@
   .slider .fill{position:absolute;left:0;height:6px;border-radius:6px;background:var(--accent);width:calc(11px + (100% - 22px) * var(--p,0))}
   .slider .knob{position:absolute;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);left:calc((100% - 22px) * var(--p,0));transition:transform .15s ease-out}
   .slider.drag .knob{transform:scale(1.15)}
-  .mix-foot{display:flex;justify-content:flex-end;padding:2px 10px 6px}
-  .mix-foot button{font-size:13px;font-weight:500;color:var(--mute);padding:8px 8px}
+  .mix-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 10px 6px 12px}
+  .imm{display:flex;align-items:center;gap:10px;padding:8px 4px!important;color:var(--ink)!important;font-size:14px!important;text-align:left}
+  .imm small{color:var(--mute);font-size:13px;font-weight:500}
+  .imm .sw{width:42px;height:26px;border-radius:999px;background:var(--faint);position:relative;flex:none;transition:background .2s ease-out}
+  .imm .sw i{position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .2s ease-out}
+  .imm[aria-checked="true"] .sw{background:var(--accent)}
+  .imm[aria-checked="true"] .sw i{transform:translateX(16px)}
+  .mix-foot button{font-size:13px;font-weight:500;color:var(--mute);padding:8px 8px;white-space:nowrap}
 
   /* ---------- scenes ---------- */
   .scenes{display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;padding:4px 2px 22px;margin:0 calc(var(--pad) * -1);padding-left:var(--pad);padding-right:var(--pad);scrollbar-width:none;scroll-padding-inline:var(--pad)}
@@ -189,7 +195,10 @@
   <nav class="scenes" id="scenes" aria-label="Soundscapes"></nav>
   <section class="mixer" aria-label="Mix">
     <div id="rows"></div>
-    <div class="mix-foot"><button id="resetMix">Reset mix</button></div>
+    <div class="mix-foot">
+      <button class="imm" id="imm" role="switch" aria-checked="false"><span class="sw" aria-hidden="true"><i></i></span><span>Immersive 8D <small>(Headphones)</small></span></button>
+      <button id="resetMix">Reset mix</button>
+    </div>
   </section>
 
   <div class="a2hs" id="a2hs" aria-labelledby="a2hsTitle">
@@ -445,13 +454,54 @@ function mixFor(k){
 let playing=false, active=null;
 const level = (k,id) => { const s=mixFor(k)[id]; return s.on ? s.v : 0; };
 
+/* ============ Immersive 8D: each layer slowly circles your head (HRTF), in a soft room ============ */
+let immersive=false; try{ immersive=localStorage.getItem('ss1_8d')==='1'; }catch(e){}
+const orbiters=[];
+function makeSpace(bus){
+  const s=ctx.createGain(), cv=ctx.createConvolver(), rv=ctx.createGain(); s.gain.value=1.15;
+  const sr=ctx.sampleRate, len=Math.floor(sr*2.2), ir=ctx.createBuffer(2,len,sr);
+  for (let ch=0; ch<2; ch++){ const d=ir.getChannelData(ch); let lp=0; for (let i=0;i<len;i++){ lp+=((Math.random()*2-1)-lp)*.2; d[i]=lp*Math.exp(-i/sr*2.6); } }
+  cv.buffer=ir; rv.gain.value=.22;
+  s.connect(bus); s.connect(cv).connect(rv).connect(bus);
+  return s;
+}
+function orbit(phase, i){
+  const p=ctx.createPanner(); p.panningModel='HRTF'; p.distanceModel='inverse'; p.refDistance=1; p.rolloffFactor=0;
+  const period=16+((i*7)%9)+Math.random()*3, dir=i%2?1:-1, rad=1.6, w=2*Math.PI/period, t0=ctx.currentTime-phase*period;
+  if (p.positionX){
+    const wave=(c,s)=>ctx.createPeriodicWave(new Float32Array([0,c]),new Float32Array([0,s]),{disableNormalization:true});
+    const a=2*Math.PI*phase, ox=ctx.createOscillator(), oz=ctx.createOscillator(), gx=ctx.createGain(), gz=ctx.createGain();
+    ox.setPeriodicWave(wave(Math.sin(a),Math.cos(a))); oz.setPeriodicWave(wave(Math.cos(a),-Math.sin(a)*dir));
+    ox.frequency.value=oz.frequency.value=1/period; gx.gain.value=gz.gain.value=rad;
+    p.positionX.value=0; p.positionZ.value=0; p.positionY.value=.15;
+    ox.connect(gx).connect(p.positionX); oz.connect(gz).connect(p.positionZ); ox.start(); oz.start();
+    orbiters.push(ox,oz);
+  } else {                                    /* older Safari: move it by timer */
+    const id=setInterval(()=>{ const t=(ctx.currentTime-t0)*w*dir; p.setPosition(Math.sin(t)*rad,.15,Math.cos(t)*rad); },50);
+    orbiters.push({stop:()=>clearInterval(id)});
+  }
+  return p;
+}
+function setImmersive(on){
+  immersive=on; try{ localStorage.setItem('ss1_8d',on?'1':'0'); }catch(e){}
+  $('imm').setAttribute('aria-checked',on);
+  if (active) Object.values(active.layers).forEach(l=>{ l.dry.gain.setTargetAtTime(on?0:1,ctx.currentTime,.25); l.wet.gain.setTargetAtTime(on?1:0,ctx.currentTime,.25); });
+}
+
 function startSound(){
   ensureAudio();
   try{ keepAlive && keepAlive.play().catch(()=>{}); }catch(e){}
   stopSound(true);
   const bus=ctx.createGain(); bus.gain.value=0; bus.connect(master);
   const layers={};
-  SCENES[sceneKey].layers.forEach(l=>{ const g=ctx.createGain(); g.gain.value=level(sceneKey,l.id); g.connect(bus); layers[l.id]={g,run:runLayer(l,g)}; });
+  const space=makeSpace(bus);
+  SCENES[sceneKey].layers.forEach((l,i,all)=>{
+    const g=ctx.createGain(); g.gain.value=level(sceneKey,l.id);
+    const dry=ctx.createGain(), wet=ctx.createGain(); dry.gain.value=immersive?0:1; wet.gain.value=immersive?1:0;
+    g.connect(dry).connect(bus);
+    g.connect(orbit(i/all.length, i)).connect(wet).connect(space);
+    layers[l.id]={g,dry,wet,run:runLayer(l,g)};
+  });
   bus.gain.setTargetAtTime(1,ctx.currentTime,.5);
   active={key:sceneKey,bus,layers}; playing=true; paintStatus();
 }
@@ -459,7 +509,8 @@ function stopSound(swap){
   if (active){
     const {bus,layers}=active;
     bus.gain.cancelScheduledValues(ctx.currentTime); bus.gain.setTargetAtTime(0,ctx.currentTime,.3);
-    Object.values(layers).forEach(l=>l.run.stop()); setTimeout(()=>bus.disconnect(),2000); active=null;
+    Object.values(layers).forEach(l=>l.run.stop());
+    orbiters.splice(0).forEach(o=>{ try{ o.stop(ctx.currentTime+1) }catch(e){} }); setTimeout(()=>bus.disconnect(),2000); active=null;
   }
   if (!swap){ playing=false; try{ keepAlive && keepAlive.pause(); }catch(e){} paintStatus(); }
 }
@@ -535,6 +586,8 @@ function paintScenes(){
 function paintAll(){ paintTheme(); paintRows(); paintScenes(); paintStatus(); }
 
 $('play').onclick=toggleSound;
+$('imm').setAttribute('aria-checked',immersive);
+$('imm').onclick=()=>setImmersive(!immersive);
 $('resetMix').onclick=()=>{ delete mixes[sceneKey]; mixFor(sceneKey); SCENES[sceneKey].layers.forEach(l=>setLevel(l.id)); paintRows(); paintStatus(); };
 document.addEventListener('keydown',e=>{
   if (e.code==='Space' && !e.target.closest('button,.slider')){ e.preventDefault(); toggleSound(); }
