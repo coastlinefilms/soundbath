@@ -454,34 +454,64 @@ function mixFor(k){
 let playing=false, active=null;
 const level = (k,id) => { const s=mixFor(k)[id]; return s.on ? s.v : 0; };
 
-/* ============ Immersive 8D: each layer slowly circles your head (HRTF), in a soft room ============ */
+/* ============ Immersive 8D ============
+   How proper 8D converters build it, rebuilt live in Web Audio:
+   - Binaural (HRTF) rotation: interaural time + level differences and pinna filtering, a full 360 degrees
+   - Stereo kept wide: left and right channels are two virtual speakers 35 degrees either side of the moving point
+   - Bass below ~200 Hz stays centred (crossover), so the low end stays full and only the detail orbits
+   - Darker behind the head, brighter in front (low-pass follows the angle)
+   - Elliptical orbit: slightly closer at the sides, further front and back, with a gentle rise and fall
+   - Room reverb fed after the panning, so reflections follow the sound around you
+   Layers share up to four orbit groups (different speeds, start points and directions) to keep phones light. */
 let immersive=false; try{ immersive=localStorage.getItem('ss1_8d')==='1'; }catch(e){}
 const orbiters=[];
 function makeSpace(bus){
-  const s=ctx.createGain(), cv=ctx.createConvolver(), rv=ctx.createGain(); s.gain.value=1.15;
-  const sr=ctx.sampleRate, len=Math.floor(sr*2.2), ir=ctx.createBuffer(2,len,sr);
-  for (let ch=0; ch<2; ch++){ const d=ir.getChannelData(ch); let lp=0; for (let i=0;i<len;i++){ lp+=((Math.random()*2-1)-lp)*.2; d[i]=lp*Math.exp(-i/sr*2.6); } }
-  cv.buffer=ir; rv.gain.value=.22;
-  s.connect(bus); s.connect(cv).connect(rv).connect(bus);
+  const s=ctx.createGain(), pre=ctx.createDelay(.1), cv=ctx.createConvolver(), damp=ctx.createBiquadFilter(), rv=ctx.createGain();
+  const sr=ctx.sampleRate, len=Math.floor(sr*2.8), ir=ctx.createBuffer(2,len,sr);
+  for (let ch=0; ch<2; ch++){ const d=ir.getChannelData(ch); let lp=0;
+    for (let i=0;i<len;i++){ const t=i/sr; lp+=((Math.random()*2-1)-lp)*(.35-.25*Math.min(1,t/2)); d[i]=lp*Math.exp(-t*2.1); }
+    [.011,.017,.023,.031,.042].forEach((t,k)=>{ const i=Math.floor((t+ch*.0023)*sr); d[i]+=(k%2?-1:1)*.6/(k+1); }); }
+  cv.buffer=ir; pre.delayTime.value=.02; damp.type='lowpass'; damp.frequency.value=7000; rv.gain.value=.34; s.gain.value=1;
+  s.connect(bus); s.connect(pre).connect(cv).connect(damp).connect(rv).connect(bus);
   return s;
 }
-function orbit(phase, i){
-  const p=ctx.createPanner(); p.panningModel='HRTF'; p.distanceModel='inverse'; p.refDistance=1; p.rolloffFactor=0;
-  const period=16+((i*7)%9)+Math.random()*3, dir=i%2?1:-1, rad=1.6, w=2*Math.PI/period, t0=ctx.currentTime-phase*period;
-  if (p.positionX){
-    const wave=(c,s)=>ctx.createPeriodicWave(new Float32Array([0,c]),new Float32Array([0,s]),{disableNormalization:true});
-    const a=2*Math.PI*phase, ox=ctx.createOscillator(), oz=ctx.createOscillator(), gx=ctx.createGain(), gz=ctx.createGain();
-    ox.setPeriodicWave(wave(Math.sin(a),Math.cos(a))); oz.setPeriodicWave(wave(Math.cos(a),-Math.sin(a)*dir));
-    ox.frequency.value=oz.frequency.value=1/period; gx.gain.value=gz.gain.value=rad;
-    p.positionX.value=0; p.positionZ.value=0; p.positionY.value=.15;
-    ox.connect(gx).connect(p.positionX); oz.connect(gz).connect(p.positionZ); ox.start(); oz.start();
-    orbiters.push(ox,oz);
-  } else {                                    /* older Safari: move it by timer */
-    const id=setInterval(()=>{ const t=(ctx.currentTime-t0)*w*dir; p.setPosition(Math.sin(t)*rad,.15,Math.cos(t)*rad); },50);
-    orbiters.push({stop:()=>clearInterval(id)});
-  }
-  return p;
+/* oscillator that outputs a*sin/cos(n*(dir*w*t + phase)): drives an AudioParam smoothly on the audio thread */
+function wave(kind, phase, dir, n=1){
+  const re=new Float32Array(n+1), im=new Float32Array(n+1), p=n*phase;
+  if (kind==='sin'){ re[n]=Math.sin(p); im[n]=dir*Math.cos(p); } else { re[n]=Math.cos(p); im[n]=-dir*Math.sin(p); }
+  return ctx.createPeriodicWave(re, im, {disableNormalization:true});
 }
+function drive(param, base, amount, kind, phase, dir, freq, n=1){
+  param.value=base; const o=ctx.createOscillator(), g=ctx.createGain();
+  o.setPeriodicWave(wave(kind,phase,dir,n)); o.frequency.value=freq; g.gain.value=amount;
+  o.connect(g).connect(param); o.start(); orbiters.push(o); return o;
+}
+function makeOrbitGroup(space, k, total){
+  const input=ctx.createGain(), out=ctx.createGain(); out.connect(space);
+  const period=[19,24,15,28][k%4], dir=k%2?1:-1, phase=2*Math.PI*k/Math.max(1,total), f=1/period, spread=35*Math.PI/180, rad=1.5;
+  /* centred bass: two cascaded low-passes = 24 dB/oct crossover */
+  const lo1=F('lowpass',200,.707), lo2=F('lowpass',200,.707), loG=G(.9); input.connect(lo1).connect(lo2).connect(loG).connect(out);
+  /* distance: a touch louder at the sides, softer front and back */
+  const dist=G(1); drive(dist.gain, .9, -.1, 'cos', phase, dir, f, 2); dist.connect(out);
+  const split=ctx.createChannelSplitter(2); input.connect(split);
+  [-1,1].forEach((side,ch)=>{
+    const hp1=F('highpass',200,.707), hp2=F('highpass',200,.707), shade=F('lowpass',11000,.5);
+    const p=ctx.createPanner(); p.panningModel='HRTF'; p.distanceModel='inverse'; p.refDistance=1; p.rolloffFactor=0;
+    const a=phase+side*spread;
+    split.connect(hp1,ch); hp1.connect(hp2).connect(shade).connect(p).connect(dist);
+    drive(shade.frequency, 10500, 7500, 'cos', a, dir, f);                 /* 18 kHz in front, 3 kHz behind */
+    if (p.positionX){
+      drive(p.positionX, 0, rad*1.08, 'sin', a, dir, f);                   /* x: right is positive */
+      drive(p.positionZ, 0, -rad*.92, 'cos', a, dir, f);                   /* z: front is negative */
+      drive(p.positionY, 0, .35, 'sin', a, dir, f/3);                      /* slow rise and fall */
+    } else {
+      const t0=ctx.currentTime, id=setInterval(()=>{ const t=dir*2*Math.PI*f*(ctx.currentTime-t0)+a; p.setPosition(Math.sin(t)*rad*1.08,.35*Math.sin(t/3),-Math.cos(t)*rad*.92); },40);
+      orbiters.push({stop:()=>clearInterval(id)});
+    }
+  });
+  return input;
+}
+function orbitGroups(space, n){ const count=Math.min(4,n), list=[]; for (let k=0;k<count;k++) list.push(makeOrbitGroup(space,k,count)); return list; }
 function setImmersive(on){
   immersive=on; try{ localStorage.setItem('ss1_8d',on?'1':'0'); }catch(e){}
   $('imm').setAttribute('aria-checked',on);
@@ -494,12 +524,12 @@ function startSound(){
   stopSound(true);
   const bus=ctx.createGain(); bus.gain.value=0; bus.connect(master);
   const layers={};
-  const space=makeSpace(bus);
-  SCENES[sceneKey].layers.forEach((l,i,all)=>{
+  const space=makeSpace(bus), groups=orbitGroups(space, SCENES[sceneKey].layers.length);
+  SCENES[sceneKey].layers.forEach((l,i)=>{
     const g=ctx.createGain(); g.gain.value=level(sceneKey,l.id);
     const dry=ctx.createGain(), wet=ctx.createGain(); dry.gain.value=immersive?0:1; wet.gain.value=immersive?1:0;
     g.connect(dry).connect(bus);
-    g.connect(orbit(i/all.length, i)).connect(wet).connect(space);
+    g.connect(wet).connect(groups[i%groups.length]);
     layers[l.id]={g,dry,wet,run:runLayer(l,g)};
   });
   bus.gain.setTargetAtTime(1,ctx.currentTime,.5);
