@@ -219,7 +219,7 @@ const f = (id,name,ic,def) => ({id,name,icon:ic,def,src:id});
 const SCENES = {
   ocean:{photo:'photo-1636730740168-c94f3ab802e6',focus:'50% 55%',name:'Ocean',bg:'#23506E',accent:'#A9DDEB',icon:'ship',layers:[f('boat','Boat','sail',1),f('waves','Waves','waves',.2),f('birds','Birds','birds',.2),f('lapping','Lapping','splash',.4),f('bubbles','Bubbles','bubbles',1)]},
   storm:{photo:'photo-1534852654286-120d822937f7',focus:'52% 50%',name:'Rainstorm',bg:'#3B4658',accent:'#C6D3E8',icon:'thunder',layers:[f('rain','Rain','rain',.8),f('pouring','Downpour','pour',.3),f('surface','Rain on glass','drop',.5),f('thunder','Thunder','thunder',.4),f('stormwind','Wind','wind',.3)]},
-  camp:{photo:'photo-1700900345238-428c7fb0155e',focus:'66% 60%',name:'Campfire',bg:'#93401F',accent:'#FFC48F',icon:'fire',layers:[f('fire','Fire','fire',.9),f('crickets','Crickets','cricket',.5),f('lapping','Lake shore','waves',.35),f('stormwind','Breeze in the pines','wind',.15)]},
+  camp:{photo:'photo-1700900345238-428c7fb0155e',focus:'66% 60%',name:'Campfire',bg:'#93401F',accent:'#FFC48F',icon:'fire',layers:[f('fire','Fire','fire',.9),f('crickets','Crickets','cricket',.5),f('lapping','Lake shore','waves',.35),f('stormwind','Breeze in the pines','wind',.15),{id:'loons',name:'Distant loons',icon:'birds',def:.6,gen:'loons'}]},
   jungle:{photo:'photo-1591081658714-f576fb7ea3ed',focus:'38% 50%',name:'Jungle',bg:'#2A5B42',accent:'#BDE6A6',icon:'leaf',layers:[f('tropical','Tropical birds','leaf',.8),f('stream','Stream','stream',.5),f('bugs','Insects','bug',.4),f('surface','Light rain','drop',.2),f('chimes','Wind chimes','chimes',.15)]},
   train:{photo:'photo-1680849488349-21138e052432',focus:'62% 55%',name:'Night train',bg:'#463A5C',accent:'#DCC8F4',icon:'train',layers:[f('train','Tracks','train',.9),f('surface','Rain on window','drop',.4),f('stormwind','Wind','wind',.2)]},
   cafe:{photo:'photo-1757435755336-f715ff8896d8',focus:'58% 55%',name:'Café',bg:'#6A4734',accent:'#F3D1AA',icon:'coffee',layers:[f('coffee','Espresso bar','coffee',.8),f('surface','Rain outside','drop',.3),f('chimes','Door chimes','chimes',.15),{...f('fire','Fireplace','fire',.3),src:'fire'},{...f('train','Metro below','train',.12),src:'train'}]},
@@ -275,6 +275,7 @@ function noiseBuf(type){
 function runLayer(layer, out){
   const r = {alive:true, src:[], tm:[]};
   r.stop = () => { r.alive=false; r.tm.forEach(clearTimeout); r.src.forEach(s=>{ try{ s.stop(ctx.currentTime+1) }catch(e){} }); };
+  if (layer.gen==='loons'){ loonLayer(out, r); return r; }
   if (layer.synth){
     const [type,cut,lvl]=layer.synth, s=ctx.createBufferSource(), lp=ctx.createBiquadFilter(), g=ctx.createGain();
     s.buffer=noiseBuf(type); s.loop=true; lp.type='lowpass'; lp.frequency.value=cut; g.gain.value=lvl;
@@ -289,6 +290,44 @@ function runLayer(layer, out){
     s.start(); r.src.push(s);
   }).catch(e=>console.error('Could not load',layer.src,e));
   return r;
+}
+
+/* ============ distant loons: real calls, spaced out, far across a lake ============ */
+const LOON_CLIPS = [['wail',.34],['wail-a',.2],['wail-b',.14],['yodel-a',.16],['yodel-b',.16]];
+const loonBuf = {};
+const getLoon = n => loonBuf[n] || (loonBuf[n] = fetch(`sounds/loon-${n}.m4a`).then(r=>r.arrayBuffer()).then(b=>new Promise((res,rej)=>ctx.decodeAudioData(b,res,rej))));
+let lakeIR=null;
+function makeLakeIR(){   /* big open-water space: 120ms pre-delay, ~5s dark tail, a far-shore echo */
+  const sr=ctx.sampleRate, pre=Math.floor(sr*.12), len=Math.floor(sr*5.2), b=ctx.createBuffer(2,len,sr);
+  for (let ch=0; ch<2; ch++){ const d=b.getChannelData(ch); let lp=0;
+    for (let i=pre;i<len;i++){ const t=(i-pre)/sr; lp+=((Math.random()*2-1)-lp)*.09; d[i]=lp*Math.exp(-t*1.05)*Math.min(1,t/.15); }
+    const echo=Math.floor((.62+ch*.035)*sr); for (let j=0;j<sr*.9;j++) d[echo+j]+=(Math.random()*2-1)*.12*Math.exp(-j/(sr*.25)); }
+  return b;
+}
+function pickLoon(){ let x=Math.random(), acc=0; for (const [n,w] of LOON_CLIPS){ acc+=w; if (x<=acc) return n; } return 'wail'; }
+function loonLayer(out, r){
+  if (!lakeIR) lakeIR=makeLakeIR();
+  LOON_CLIPS.forEach(([n])=>getLoon(n));
+  const voice=(pan,cut,level)=>{
+    const hp=ctx.createBiquadFilter(), lp=ctx.createBiquadFilter(), dry=ctx.createGain(), wet=ctx.createGain(), cv=ctx.createConvolver(), g=ctx.createGain(), p=ctx.createStereoPanner?ctx.createStereoPanner():ctx.createGain();
+    hp.type='highpass'; hp.frequency.value=260; lp.type='lowpass'; lp.frequency.value=cut;
+    dry.gain.value=.22; wet.gain.value=1; cv.buffer=lakeIR; g.gain.value=level; if (p.pan) p.pan.value=pan;
+    hp.connect(lp); lp.connect(dry).connect(g); lp.connect(cv).connect(wet).connect(g); g.connect(p).connect(out);
+    return hp;
+  };
+  const play=(name,t,pan,cut,level)=>getLoon(name).then(buf=>{
+    if (!r.alive) return;
+    const s=ctx.createBufferSource(); s.buffer=buf; s.playbackRate.value=.96+Math.random()*.06;
+    s.connect(voice(pan,cut,level)); s.start(t);
+  }).catch(()=>{});
+  const call=()=>{
+    if (!r.alive) return;
+    const side=Math.random()<.5?-1:1, t=ctx.currentTime+.1;
+    play(pickLoon(), t, side*(.25+Math.random()*.4), 1900, .045);
+    if (Math.random()<.3) play(Math.random()<.6?'wail-b':'wail-a', t+8+Math.random()*7, -side*(.5+Math.random()*.3), 1200, .028);  /* a farther loon answers */
+    r.tm.push(setTimeout(call, (45+Math.random()*75)*1000));   /* quiet for 45 to 120 seconds */
+  };
+  r.tm.push(setTimeout(call, (8+Math.random()*7)*1000));
 }
 
 /* ============ interface sounds ============ */
