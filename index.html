@@ -475,7 +475,7 @@ function paintTheme(){
   $('sceneName').textContent=S.name;
 }
 function paintStatus(){
-  const n=SCENES[sceneKey].layers.filter(l=>mixFor(sceneKey)[l.id].on).length;
+  const n=SCENES[sceneKey].layers.filter(l=>{ const s=mixFor(sceneKey)[l.id]; return s.on&&s.v>0; }).length;
   $('top').classList.toggle('on',playing);
   $('status').textContent = playing ? 'Playing' : `${n} ${n===1?'sound':'sounds'}`;
   $('play').innerHTML = playing ? PAUSE : PLAY;
@@ -491,14 +491,15 @@ function paintRows(){
       <div class="slider" role="slider" tabindex="0" aria-label="${l.name} volume" aria-valuemin="0" aria-valuemax="100">
         <div class="rail"></div><div class="fill"></div><div class="knob"></div></div>`;
     const sl=row.querySelector('.slider'), fill=row.querySelector('.fill'), knob=row.querySelector('.knob'), pct=row.querySelector('.pct'), tg=row.querySelector('.toggle');
-    const draw=()=>{ const p=st.v*100; sl.style.setProperty('--p',st.v); pct.textContent=st.on?Math.round(p)+'%':'Off'; sl.setAttribute('aria-valuenow',Math.round(p)); row.classList.toggle('off',!st.on); tg.setAttribute('aria-pressed',st.on); };
+    const draw=()=>{ const p=st.v*100, live=st.on&&st.v>0; sl.style.setProperty('--p',st.v); pct.textContent=live?Math.round(p)+'%':'Off'; sl.setAttribute('aria-valuenow',Math.round(p)); row.classList.toggle('off',!live); tg.setAttribute('aria-pressed',live); };
     draw();
-    tg.onclick=()=>{ st.on=!st.on; draw(); setLevel(l.id); paintStatus(); if (st.on && !playing) startSound(); };
+    tg.onclick=()=>{ if (st.v===0){ st.v=.5; st.on=true; } else st.on=!st.on; draw(); setLevel(l.id); paintStatus(); if (st.on && !playing) startSound(); };
     const at=e=>{ const r=sl.getBoundingClientRect(); st.v=Math.round(Math.min(1,Math.max(0,(e.clientX-r.left-11)/(r.width-22)))*20)/20; st.on=true; draw(); setLevel(l.id); };
     let startX=0, dragging=false;
     sl.addEventListener('pointerdown',e=>{ startX=e.clientX; dragging=true; sl.setPointerCapture(e.pointerId); sl.classList.add('drag'); at(e); if (!playing) startSound(); });
     sl.addEventListener('pointermove',e=>{ if (dragging) at(e); });
     const end=()=>{ dragging=false; sl.classList.remove('drag'); paintStatus(); };
+    sl.addEventListener('keyup',()=>paintStatus());
     sl.addEventListener('pointerup',end); sl.addEventListener('pointercancel',end);
     sl.addEventListener('keydown',e=>{ const d={ArrowRight:.05,ArrowUp:.05,ArrowLeft:-.05,ArrowDown:-.05}[e.key]; if (d===undefined) return; e.preventDefault(); st.v=Math.round(Math.min(1,Math.max(0,st.v+d))*20)/20; st.on=true; draw(); setLevel(l.id); });
     wrap.appendChild(row);
