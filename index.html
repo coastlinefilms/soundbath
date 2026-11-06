@@ -210,6 +210,12 @@ const P = {
   coffee:'<path d="M4 9h13v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M17 11h1.5a2.5 2.5 0 0 1 0 5H17"/><path d="M8 3c-.8 1 .8 2 0 3M12 3c-.8 1 .8 2 0 3"/>',
   chatter:'<path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h7A2.5 2.5 0 0 1 16 6.5v4a2.5 2.5 0 0 1-2.5 2.5H9l-3.5 3v-3A2.5 2.5 0 0 1 4 10.5z"/><path d="M16 9h1.5A2.5 2.5 0 0 1 20 11.5v4a2.5 2.5 0 0 1-2 2.45V21l-3-3h-3.5A2.5 2.5 0 0 1 9 16"/>',
   street:'<path d="M3 21V9l5-4 5 4v12"/><path d="M13 21V12h8v9"/><path d="M6 12h4M6 16h4M16 15h2M16 18h2M2 21h20"/>',
+  fan:'<circle cx="12" cy="12" r="1.6"/><path d="M12 10.4c-.6-3.4.4-6.4 3-6.4 2.2 0 2.5 3-3 6.4zM13.6 12c3.4-.6 6.4.4 6.4 3 0 2.2-3 2.5-6.4-3zM12 13.6c.6 3.4-.4 6.4-3 6.4-2.2 0-2.5-3 3-6.4zM10.4 12c-3.4.6-6.4-.4-6.4-3 0-2.2 3-2.5 6.4 3z"/>',
+  plane:'<path d="M10.5 20.5 12 15l-6.5 2V15l6.5-4V5a1.5 1.5 0 0 1 3 0v6l6.5 4v2L15 15l1.5 5.5-2.5-.5-1.5-2-1.5 2z"/>',
+  orbit:'<circle cx="12" cy="12" r="3.5"/><ellipse cx="12" cy="12" rx="9.5" ry="3.8" transform="rotate(-20 12 12)"/>',
+  sine:'<path d="M2 12c2.5-7 5-7 7.5 0s5 7 7.5 0 3.5-4 5-4"/>',
+  tape:'<rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="8.5" cy="12" r="2"/><circle cx="15.5" cy="12" r="2"/><path d="M8.5 14h7"/>',
+  grey:'<path d="M3 12h3l1.5-3 2 6 2-9 2 12 2-8 1.5 4H21"/>',
   noise:'<path d="M3 12h2l2-5 3 10 3-12 3 14 2-7h3"/>'
 };
 const icon = k => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${P[k]}</svg>`;
@@ -225,7 +231,17 @@ const SCENES = {
   jungle:{photo:'photo-1591081658714-f576fb7ea3ed',focus:'38% 50%',name:'Jungle',bg:'#2A5B42',accent:'#BDE6A6',icon:'leaf',layers:[f('tropical','Tropical birds','leaf',.8),f('stream','Stream','stream',.5),f('bugs','Insects','bug',.4),f('surface','Light rain','drop',.2),f('chimes','Wind chimes','chimes',.15)]},
   train:{photo:'photo-1680849488349-21138e052432',focus:'62% 55%',name:'Night train',bg:'#463A5C',accent:'#DCC8F4',icon:'train',layers:[f('train','Tracks','train',.9),f('surface','Rain on window','drop',.4),f('stormwind','Wind','wind',.2)]},
   cafe:{photo:'photo-1757435755336-f715ff8896d8',focus:'58% 55%',name:'Café',bg:'#6A4734',accent:'#F3D1AA',icon:'coffee',layers:[f('coffee','Espresso bar','coffee',.8),f('chatter','Café chatter','chatter',.5),f('street','Street outside','street',.5),f('chimes','Door chimes','chimes',.15),f('fire','Fireplace','fire',.3)]},
-  noise:{photo:'photo-1708748513828-2227f6d39c04',focus:'40% 50%',name:'Noise',bg:'#6F6355',accent:'#F0E3CF',icon:'noise',layers:[{id:'brown',name:'Brown',icon:'noise',def:.8,synth:['brown',900,.7]},{id:'pink',name:'Pink',icon:'noise',def:.05,synth:['pink',4000,.5],off:true},{id:'white',name:'White',icon:'noise',def:.05,synth:['white',6000,.15],off:true}]}
+  noise:{photo:'photo-1708748513828-2227f6d39c04',focus:'40% 50%',name:'Noise',bg:'#6F6355',accent:'#F0E3CF',icon:'noise',layers:[{id:'brown',name:'Brown',icon:'noise',def:.8,synth:['brown',900,.7]},{id:'pink',name:'Pink',icon:'noise',def:.5,synth:['pink',4000,.5],off:true},{id:'white',name:'White',icon:'noise',def:.5,synth:['white',6000,.15],off:true},
+    {id:'grey',name:'Grey',icon:'grey',def:.5,gen:'grey',off:true},
+    {id:'fan',name:'Bedroom fan',icon:'fan',def:.5,gen:'fan',off:true},
+    {id:'cabin',name:'Plane cabin',icon:'plane',def:.5,gen:'cabin',off:true},
+    {id:'swell',name:'Slow swell',icon:'waves',def:.5,gen:'swell',off:true},
+    {id:'hush',name:'Wind hush',icon:'wind',def:.5,gen:'hush',off:true},
+    {id:'under',name:'Underwater',icon:'drop',def:.5,gen:'under',off:true},
+    {id:'hiss',name:'Tape hiss',icon:'tape',def:.5,gen:'hiss',off:true},
+    {id:'space',name:'Deep space',icon:'orbit',def:.5,gen:'space',off:true},
+    {id:'alpha',name:'Alpha waves',icon:'sine',def:.5,gen:'alpha',off:true},
+    {id:'drone',name:'Warm drone',icon:'sine',def:.5,gen:'drone',off:true}]}
 };
 
 /* ============ audio engine ============ */
@@ -278,6 +294,7 @@ function runLayer(layer, out){
   const r = {alive:true, src:[], tm:[]};
   r.stop = () => { r.alive=false; r.tm.forEach(clearTimeout); r.src.forEach(s=>{ try{ s.stop(ctx.currentTime+1) }catch(e){} }); };
   if (layer.gen==='loons'){ loonLayer(out, r); return r; }
+  if (layer.gen && GEN[layer.gen]){ GEN[layer.gen](out, r); return r; }
   if (layer.synth){
     const [type,cut,lvl]=layer.synth, s=ctx.createBufferSource(), lp=ctx.createBiquadFilter(), g=ctx.createGain();
     s.buffer=noiseBuf(type); s.loop=true; lp.type='lowpass'; lp.frequency.value=cut; g.gain.value=lvl;
@@ -331,6 +348,38 @@ function loonLayer(out, r){
   };
   r.tm.push(setTimeout(call, (4+Math.random()*4)*1000));
 }
+
+/* ============ generated textures for the Noise scene ============ */
+function N(type,dst){ const s=ctx.createBufferSource(); s.buffer=noiseBuf(type); s.loop=true; s.loopStart=0; s.connect(dst); s.start(ctx.currentTime, Math.random()*5); return s; }
+function F(type,f,q=.7,gainDb=0){ const n=ctx.createBiquadFilter(); n.type=type; n.frequency.value=f; n.Q.value=q; n.gain.value=gainDb; return n; }
+function G(v){ const g=ctx.createGain(); g.gain.value=v; return g; }
+function lfo(param, rate, depth, r, shape='sine'){ const o=ctx.createOscillator(), g=G(depth); o.type=shape; o.frequency.value=rate; o.connect(g).connect(param); o.start(ctx.currentTime, 0); r.src.push(o); return o; }
+function osc(f, dst, r, type='sine'){ const o=ctx.createOscillator(); o.type=type; o.frequency.value=f; o.connect(dst); o.start(); r.src.push(o); return o; }
+const GEN = {
+  grey(out,r){ const a=F('peaking',1000,.6,-11), b=F('lowshelf',160,.7,5), c=F('highshelf',7000,.7,3), lp=F('lowpass',12000), g=G(LV.grey);
+    a.connect(b).connect(c).connect(lp).connect(g).connect(out); r.src.push(N('pink',a)); },
+  fan(out,r){ const body=F('lowpass',850,.5), g=G(LV.fan), am=G(1); body.connect(am).connect(g).connect(out);
+    lfo(am.gain, 13.5, .06, r); r.src.push(N('pink',body));
+    const hum=F('lowpass',180), hg=G(.55); hum.connect(hg).connect(g); r.src.push(N('brown',hum)); },
+  cabin(out,r){ const lo=F('lowpass',420,.6), g=G(LV.cabin); lo.connect(g).connect(out); r.src.push(N('brown',lo));
+    const mid=F('bandpass',360,.6), mg=G(.35); mid.connect(mg).connect(g); r.src.push(N('pink',mid));
+    const eng=G(.025); eng.connect(g); osc(116,eng,r); osc(116.6,eng,r); },
+  swell(out,r){ const lp=F('lowpass',1100,.5), am=G(.55), g=G(LV.swell); lp.connect(am).connect(g).connect(out);
+    lfo(am.gain, .09, .4, r); lfo(lp.frequency, .09, 500, r); r.src.push(N('pink',lp)); },
+  hush(out,r){ const g=G(LV.hush); [[-.5,.061,0],[.5,.047,1.7]].forEach(([p,rate,ph])=>{
+      const bp=F('bandpass',650,1.4), pn=ctx.createStereoPanner?ctx.createStereoPanner():G(1), lv=G(.6); if (pn.pan) pn.pan.value=p;
+      bp.connect(lv).connect(pn).connect(g); lfo(bp.frequency, rate, 420, r); lfo(lv.gain, rate*1.3, .3, r); r.src.push(N('white',bp)); });
+    g.connect(out); },
+  under(out,r){ const lp=F('lowpass',260,1.6), g=G(LV.under); lp.connect(g).connect(out); lfo(lp.frequency,.17,90,r); r.src.push(N('brown',lp)); },
+  hiss(out,r){ const hp=F('highpass',2600,.5), lp=F('lowpass',9500,.5), g=G(LV.hiss); hp.connect(lp).connect(g).connect(out); r.src.push(N('pink',hp)); },
+  space(out,r){ const lp=F('lowpass',95,.9), g=G(LV.space); lp.connect(g).connect(out); lfo(lp.frequency,.03,30,r); r.src.push(N('brown',lp));
+    const sub=G(.09); sub.connect(g); osc(38,sub,r); const s2=G(.04); s2.connect(g); osc(57.2,s2,r); },
+  alpha(out,r){ const m=ctx.createChannelMerger(2), g=G(LV.alpha); m.connect(g).connect(out);
+    const L=G(1), R=G(1); L.connect(m,0,0); R.connect(m,0,1); osc(200,L,r); osc(210,R,r); },   /* 10 Hz difference between ears */
+  drone(out,r){ const lp=F('lowpass',900,.4), g=G(LV.drone); lp.connect(g).connect(out); lfo(lp.frequency,.04,350,r);
+    [55,82.41,110,164.81].forEach((f,i)=>{ const v=G([1,.7,.55,.3][i]); v.connect(lp); osc(f-.18,v,r,'triangle'); osc(f+.18,v,r,'triangle'); }); }
+};
+let LV = {alpha:0.099,cabin:0.727,drone:0.141,fan:0.873,grey:0.617,hiss:0.484,hush:0.971,space:1.014,swell:1.459,under:0.789};   /* loudness-matched to Brown (tones and hiss sit ~4-5 LU lower) */
 
 /* ============ interface sounds ============ */
 function uiTone(f,{to=null,glide=.05,a=.004,d=.3,v=.15,t=0}={}){
