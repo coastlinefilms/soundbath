@@ -137,18 +137,16 @@
   .credit{text-align:center;font-size:11px;font-weight:500;color:var(--mute);opacity:.7;padding:22px 0 4px}
   .credit a{color:inherit;text-decoration:none}
   .credit a:hover{color:var(--ink)}
-  .a2hs{position:fixed;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom) + 12px);z-index:9;max-width:440px;margin:0 auto;
-    display:grid;grid-template-columns:52px 1fr;gap:12px 14px;align-items:center;padding:16px;border-radius:24px;
-    background:rgba(22,22,24,.78);-webkit-backdrop-filter:var(--glass);backdrop-filter:var(--glass);box-shadow:0 12px 40px rgba(0,0,0,.35),inset 0 0 0 1px rgba(255,255,255,.1);
-    opacity:0;transform:translateY(16px);pointer-events:none;transition:opacity .25s ease-out,transform .25s ease-out}
-  .a2hs.show{opacity:1;transform:none;pointer-events:auto}
+  .a2hs{display:none;grid-template-columns:52px 1fr;gap:12px 14px;align-items:center;padding:16px;margin-top:22px;border-radius:24px;
+    background:rgba(22,22,24,.55);-webkit-backdrop-filter:var(--glass);backdrop-filter:var(--glass);box-shadow:inset 0 0 0 1px rgba(255,255,255,.1)}
+  .a2hs.show{display:grid}
   .a2hs img{width:52px;height:52px;border-radius:12px}
   .a2hs h3{font-size:16px;font-weight:600;line-height:1.25}
   .a2hs p{font-size:14px;color:var(--mute);margin-top:3px;line-height:1.4;text-wrap:pretty}
   .a2hs p svg{width:17px;height:17px;vertical-align:-3px;stroke:var(--ink);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;margin:0 1px}
   .a2hs .btns{grid-column:1/3;display:flex;gap:8px}
+  .a2hs .btns[hidden]{display:none}
   .a2hs .btns button{flex:1;height:44px;border-radius:999px;font-weight:600;font-size:15px}
-  .a2hs .later{border:1.5px solid var(--faint)}
   .a2hs .install{background:var(--ink);color:#111}
   @media (min-width:900px){
     .app{max-width:980px;display:grid;grid-template-columns:1fr 420px;grid-template-rows:auto 1fr auto;column-gap:64px;align-content:center}
@@ -193,14 +191,13 @@
     <div class="mix-foot"><button id="resetMix">Reset mix</button></div>
   </section>
 
+  <div class="a2hs" id="a2hs" aria-labelledby="a2hsTitle">
+    <img src="/icons/apple-touch-icon.png" alt="">
+    <div><h3 id="a2hsTitle">Add Soundscapes to your Home Screen</h3>
+      <p id="a2hsText">Tap <svg viewBox="0 0 24 24" aria-label="Share"><path d="M12 15V3M8 7l4-4 4 4"/><path d="M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1"/></svg> Share, then Add to Home Screen. It opens full screen like an app.</p></div>
+    <div class="btns" id="a2hsBtns" hidden><button class="install" id="a2hsGo">Install</button></div>
+  </div>
   <footer class="credit">Powered by <a href="https://coastlinefilms.ca" target="_blank" rel="noopener">Coastline Films</a></footer>
-</div>
-
-<div class="a2hs" id="a2hs" role="dialog" aria-labelledby="a2hsTitle">
-  <img src="/icons/apple-touch-icon.png" alt="">
-  <div><h3 id="a2hsTitle">Add Soundscapes to your Home Screen</h3>
-    <p id="a2hsText">Tap <svg viewBox="0 0 24 24" aria-label="Share"><path d="M12 15V3M8 7l4-4 4 4"/><path d="M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1"/></svg> Share, then Add to Home Screen. It opens full screen like an app.</p></div>
-  <div class="btns"><button class="later" id="a2hsLater">Not now</button><button class="install" id="a2hsGo" hidden>Install</button></div>
 </div>
 
 <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
@@ -587,22 +584,21 @@ $('reset').onclick=()=>{ if (tick || left<total) glassOff(); setMode(mode.min,mo
 document.querySelectorAll('#modes button').forEach(b=>b.onclick=()=>setMode(+b.dataset.min,b.dataset.kind));
 document.addEventListener('visibilitychange',()=>{ if (!document.hidden && tick){ left=Math.max(0,Math.round((endAt-Date.now())/1000)); paintTimer(); } });
 
-/* ============ add to home screen prompt (phones only, once) ============ */
+/* ============ add to home screen card: phones, until opened as an installed app ============ */
 (function(){
   const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-  const ios = /iphone|ipod/i.test(navigator.userAgent) || (/ipad/i.test(navigator.userAgent));
-  let seen = false; try { seen = localStorage.getItem('ss1_a2hs') === '1'; } catch(e){}
-  if (standalone || seen) return;
-  const box=$('a2hs'), go=$('a2hsGo');
-  const hide=()=>{ box.classList.remove('show'); try{ localStorage.setItem('ss1_a2hs','1'); }catch(e){} };
-  $('a2hsLater').onclick=hide;
-  if (ios){ $('a2hsLater').textContent='Got it'; setTimeout(()=>box.classList.add('show'), 1800); return; }
+  const phone = window.matchMedia('(max-width:600px)').matches;
+  const ios = /iphone|ipod/i.test(navigator.userAgent);
+  if (standalone || !phone) return;
+  const box=$('a2hs');
+  if (ios){ box.classList.add('show'); return; }
   window.addEventListener('beforeinstallprompt', e=>{        /* Android / Chrome: real install button */
-    e.preventDefault(); if (window.innerWidth>600) return;
+    e.preventDefault();
     $('a2hsText').textContent='Install it to open full screen like an app, right from your home screen.';
-    go.hidden=false; go.onclick=async()=>{ hide(); e.prompt(); };
-    setTimeout(()=>box.classList.add('show'), 1800);
+    $('a2hsBtns').hidden=false; $('a2hsGo').onclick=()=>e.prompt();
+    box.classList.add('show');
   });
+  window.addEventListener('appinstalled', ()=>box.classList.remove('show'));
 })();
 
 paintAll(); paintTimer();
