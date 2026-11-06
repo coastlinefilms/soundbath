@@ -291,6 +291,7 @@ function ensureAudio(){
   try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch(e){}
   ctx = new (window.AudioContext||window.webkitAudioContext)();
   master = ctx.createGain(); master.gain.value = 1; master.connect(ctx.destination);
+  measureHRTF();
   // iPhone: a silent media element moves audio onto the playback channel, so the ring/silent switch doesn't mute it
   try{
     const sr=8000,n=sr,buf=new ArrayBuffer(44+n*2),v=new DataView(buf);
@@ -471,8 +472,9 @@ function makeSpace(bus){
   for (let ch=0; ch<2; ch++){ const d=ir.getChannelData(ch); let lp=0;
     for (let i=0;i<len;i++){ const t=i/sr; lp+=((Math.random()*2-1)-lp)*(.35-.25*Math.min(1,t/2)); d[i]=lp*Math.exp(-t*2.1); }
     [.011,.017,.023,.031,.042].forEach((t,k)=>{ const i=Math.floor((t+ch*.0023)*sr); d[i]+=(k%2?-1:1)*.6/(k+1); }); }
-  cv.buffer=ir; pre.delayTime.value=.02; damp.type='lowpass'; damp.frequency.value=7000; rv.gain.value=.34; s.gain.value=1;
-  s.connect(bus); s.connect(pre).connect(cv).connect(damp).connect(rv).connect(bus);
+  cv.buffer=ir; pre.delayTime.value=.028; damp.type='lowpass'; damp.frequency.value=11000; rv.gain.value=.24; s.gain.value=1;
+  const sendHP=ctx.createBiquadFilter(); sendHP.type='highpass'; sendHP.frequency.value=280;
+  s.connect(bus); s.connect(sendHP).connect(pre).connect(cv).connect(damp).connect(rv).connect(bus);
   return s;
 }
 /* oscillator that outputs a*sin/cos(n*(dir*w*t + phase)): drives an AudioParam smoothly on the audio thread */
@@ -510,30 +512,60 @@ function shapeSpec(shape, r){
     default:        return {x:['sin',1,r*1.05],z:['cos',1,-r*.95],y:['sin',3,.25]};    /* circle with a gentle bob */
   }
 }
+/* High-fidelity 8D chain (measured fixes):
+   - Mid/side: only the mid (L+R) is spatialised, so correlated left/right content never comb-filters;
+     the side (L-R) is kept as clean width around you.
+   - Bass and side are delayed by the HRTF panner's own latency, so the bands line up (no hollow notch).
+   - HRTF colouring corrected: browser HRTF adds up to +7 dB at 100-400 Hz and -4.5 dB above 6 kHz.
+   - Behind-the-head shading is a gentle high shelf (max -4 dB) instead of a 3 kHz low-pass. */
+let hrtfLatency=null;
+async function measureHRTF(){
+  try{
+    const SR=ctx.sampleRate, off=new OfflineAudioContext(1,Math.floor(SR*.1),SR), b=off.createBuffer(1,Math.floor(SR*.1),SR); b.getChannelData(0)[64]=1;
+    const s=off.createBufferSource(), p=off.createPanner(); s.buffer=b; p.panningModel='HRTF'; p.rolloffFactor=0; if (p.positionZ) p.positionZ.value=-1; else p.setPosition(0,0,-1);
+    s.connect(p).connect(off.destination); s.start(); const d=(await off.startRendering()).getChannelData(0);
+    let pk=0,at=64; for (let i=0;i<d.length;i++) if (Math.abs(d[i])>pk){ pk=Math.abs(d[i]); at=i; }
+    hrtfLatency=Math.max(0,at-64)/SR;
+  }catch(e){ hrtfLatency=305/48000; }
+}
 function makeLayerOrbit(space, id, idx){
-  const input=ctx.createGain(), out=ctx.createGain(); out.connect(space);
-  const P=pathFor(id, idx), S=shapeSpec(P.shape, 1.5), f=1/P.period, spread=32*Math.PI/180;
-  const lo1=F('lowpass',200,.707), lo2=F('lowpass',200,.707), loG=G(.9); input.connect(lo1).connect(lo2).connect(loG).connect(out);
-  const dist=G(1); drive(dist.gain, .9, -.1, 'cos', P.phase, P.dir, f, 2); dist.connect(out);
+  const lat = hrtfLatency ?? 305/ctx.sampleRate;
+  const input=ctx.createGain(), out=ctx.createGain(); out.gain.value=1.25;
+  const fixLo=F('peaking',180,1,-2.8), fixLo2=F('peaking',105,1.3,-1.7), fixHi=F('highshelf',6000,.7,1.2);   /* final trim after the bands recombine */
+  out.connect(fixLo).connect(fixLo2).connect(fixHi).connect(space);
+  const P=pathFor(id, idx), S=shapeSpec(P.shape, 1.5), f=1/P.period, X=150;
+  /* mid and side */
   const split=ctx.createChannelSplitter(2); input.connect(split);
-  [-1,1].forEach((side,ch)=>{
-    const hp1=F('highpass',200,.707), hp2=F('highpass',200,.707), shade=F('lowpass',11000,.5);
-    const p=ctx.createPanner(); p.panningModel='HRTF'; p.distanceModel='inverse'; p.refDistance=1; p.rolloffFactor=0;
-    const a=P.phase+side*spread;
-    split.connect(hp1,ch); hp1.connect(hp2).connect(shade).connect(p).connect(dist);
-    /* darker when the z path puts it behind you (z positive), brighter in front */
-    const zr=Math.abs(S.z[2])||1; drive(shade.frequency, 10500, -7500*S.z[2]/zr, S.z[0], a, P.dir, f, S.z[1]);
-    if (p.positionX){
-      drive(p.positionX, 0, S.x[2], S.x[0], a, P.dir, f, S.x[1]);
-      drive(p.positionZ, 0, S.z[2], S.z[0], a, P.dir, f, S.z[1]);
-      drive(p.positionY, P.height, S.y[2], S.y[0], a, P.dir, f, S.y[1]);
-    } else {
-      const fn=(k,n,t)=>k==='sin'?Math.sin(n*t):Math.cos(n*t), t0=ctx.currentTime;
-      const id2=setInterval(()=>{ const t=P.dir*2*Math.PI*f*(ctx.currentTime-t0)+a;
-        p.setPosition(S.x[2]*fn(S.x[0],S.x[1],t), P.height+S.y[2]*fn(S.y[0],S.y[1],t), S.z[2]*fn(S.z[0],S.z[1],t)); },40);
-      orbiters.push({stop:()=>clearInterval(id2)});
-    }
-  });
+  const mid=G(.5), side=G(.5), inv=G(-1);
+  split.connect(mid,0); split.connect(mid,1);
+  split.connect(side,0); split.connect(inv,1); inv.connect(side);
+  /* centred bass, time-aligned with the HRTF path */
+  const lo1=F('lowpass',X,.707), lo2=F('lowpass',X,.707), loD=ctx.createDelay(.05), loG=G(.9); loD.delayTime.value=lat;
+  mid.connect(lo1).connect(lo2).connect(loD).connect(loG).connect(out);
+  /* side kept as width (L=+S, R=-S), time-aligned */
+  const sHP=F('highpass',X,.707), sD=ctx.createDelay(.05), sG=G(.85), sInv=G(-1), merge=ctx.createChannelMerger(2);
+  sD.delayTime.value=lat; side.connect(sHP).connect(sD).connect(sG);
+  sG.connect(merge,0,0); sG.connect(sInv); sInv.connect(merge,0,1); merge.connect(out);
+  /* spatialised mid: crossover, HRTF correction EQ, gentle shading, panner, distance */
+  const hp1=F('highpass',X,.707), hp2=F('highpass',X,.707);
+  const eq1=F('peaking',165,.85,-8), eq2=F('peaking',420,1.3,-2.5), eq3=F('highshelf',6500,.7,5), eq4=F('highshelf',13000,.7,3.5);
+  const shade=F('highshelf',5000,.7,0);
+  const p=ctx.createPanner(); p.panningModel='HRTF'; p.distanceModel='inverse'; p.refDistance=1; p.rolloffFactor=0;
+  const dist=G(1);
+  mid.connect(hp1).connect(hp2).connect(eq1).connect(eq2).connect(eq3).connect(eq4).connect(shade).connect(p).connect(dist).connect(out);
+  const zr=Math.abs(S.z[2])||1;
+  drive(shade.gain, -1.2, 1.2*S.z[2]/zr, S.z[0], P.phase, P.dir, f, S.z[1]);  /* 0 dB in front, -2.4 dB behind */
+  drive(dist.gain, .95, -.06, 'cos', P.phase, P.dir, f, 2);
+  if (p.positionX){
+    drive(p.positionX, 0, S.x[2], S.x[0], P.phase, P.dir, f, S.x[1]);
+    drive(p.positionZ, 0, S.z[2], S.z[0], P.phase, P.dir, f, S.z[1]);
+    drive(p.positionY, P.height, S.y[2], S.y[0], P.phase, P.dir, f, S.y[1]);
+  } else {
+    const fn=(k,n,t)=>k==='sin'?Math.sin(n*t):Math.cos(n*t), t0=ctx.currentTime;
+    const id2=setInterval(()=>{ const t=P.dir*2*Math.PI*f*(ctx.currentTime-t0)+P.phase;
+      p.setPosition(S.x[2]*fn(S.x[0],S.x[1],t), P.height+S.y[2]*fn(S.y[0],S.y[1],t), S.z[2]*fn(S.z[0],S.z[1],t)); },40);
+    orbiters.push({stop:()=>clearInterval(id2)});
+  }
   return input;
 }
 /* build a layer's 3D chain only when it's actually audible in 8D (keeps phones light) */
