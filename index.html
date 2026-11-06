@@ -25,7 +25,8 @@
     --pad:clamp(20px,6vw,28px);
   }
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-  html{background:#000}
+  html{background:#000;touch-action:manipulation;-webkit-text-size-adjust:100%}
+  button,.slider,.scene,.toggle{touch-action:manipulation;-webkit-user-select:none;user-select:none}
   body{
     font-family:Manrope,-apple-system,system-ui,sans-serif;color:var(--ink);
     background:#000;
@@ -583,6 +584,14 @@ $('start').onclick=startPause;
 $('reset').onclick=()=>{ if (tick || left<total) glassOff(); setMode(mode.min,mode.kind); };
 document.querySelectorAll('#modes button').forEach(b=>b.onclick=()=>setMode(+b.dataset.min,b.dataset.kind));
 document.addEventListener('visibilitychange',()=>{ if (!document.hidden && tick){ left=Math.max(0,Math.round((endAt-Date.now())/1000)); paintTimer(); } });
+
+/* ============ installed app: lock zoom so double-taps never zoom the page ============ */
+if (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true){
+  document.querySelector('meta[name=viewport]').setAttribute('content','width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover');
+  document.addEventListener('gesturestart', e=>e.preventDefault());
+  let lastTouch=0;
+  document.addEventListener('touchend', e=>{ const now=Date.now(); if (now-lastTouch<320 && !e.target.closest('.slider')) e.preventDefault(); lastTouch=now; }, {passive:false});
+}
 
 /* ============ add to home screen card: phones, until opened as an installed app ============ */
 (function(){
