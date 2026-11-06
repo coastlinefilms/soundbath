@@ -219,7 +219,7 @@ const f = (id,name,ic,def) => ({id,name,icon:ic,def,src:id});
 const SCENES = {
   ocean:{photo:'photo-1636730740168-c94f3ab802e6',focus:'50% 55%',name:'Ocean',bg:'#23506E',accent:'#A9DDEB',icon:'ship',layers:[f('boat','Boat','sail',1),f('waves','Waves','waves',.2),f('birds','Birds','birds',.2),f('lapping','Lapping','splash',.4),f('bubbles','Bubbles','bubbles',1)]},
   storm:{photo:'photo-1534852654286-120d822937f7',focus:'52% 50%',name:'Rainstorm',bg:'#3B4658',accent:'#C6D3E8',icon:'thunder',layers:[f('rain','Rain','rain',.8),f('pouring','Downpour','pour',.3),f('surface','Rain on glass','drop',.5),f('thunder','Thunder','thunder',.4),f('stormwind','Wind','wind',.3)]},
-  camp:{photo:'photo-1700900345238-428c7fb0155e',focus:'66% 60%',name:'Campfire',bg:'#93401F',accent:'#FFC48F',icon:'fire',layers:[f('fire','Fire','fire',.9),f('crickets','Crickets','cricket',.5),f('stream','Stream','stream',.3)]},
+  camp:{photo:'photo-1700900345238-428c7fb0155e',focus:'66% 60%',name:'Campfire',bg:'#93401F',accent:'#FFC48F',icon:'fire',layers:[f('fire','Fire','fire',.9),f('crickets','Crickets','cricket',.5),f('lapping','Lake shore','waves',.35),f('stormwind','Breeze in the pines','wind',.15),{id:'loons',name:'Distant loons',icon:'birds',def:.55,gen:'loons'}]},
   jungle:{photo:'photo-1591081658714-f576fb7ea3ed',focus:'38% 50%',name:'Jungle',bg:'#2A5B42',accent:'#BDE6A6',icon:'leaf',layers:[f('tropical','Tropical birds','leaf',.8),f('stream','Stream','stream',.5),f('bugs','Insects','bug',.4),f('surface','Light rain','drop',.2),f('chimes','Wind chimes','chimes',.15)]},
   train:{photo:'photo-1680849488349-21138e052432',focus:'62% 55%',name:'Night train',bg:'#463A5C',accent:'#DCC8F4',icon:'train',layers:[f('train','Tracks','train',.9),f('surface','Rain on window','drop',.4),f('stormwind','Wind','wind',.2)]},
   cafe:{photo:'photo-1757435755336-f715ff8896d8',focus:'58% 55%',name:'Café',bg:'#6A4734',accent:'#F3D1AA',icon:'coffee',layers:[f('coffee','Espresso bar','coffee',.8),f('surface','Rain outside','drop',.3),f('chimes','Door chimes','chimes',.15),{...f('fire','Fireplace','fire',.3),src:'fire'},{...f('train','Metro below','train',.12),src:'train'}]},
@@ -275,6 +275,7 @@ function noiseBuf(type){
 function runLayer(layer, out){
   const r = {alive:true, src:[], tm:[]};
   r.stop = () => { r.alive=false; r.tm.forEach(clearTimeout); r.src.forEach(s=>{ try{ s.stop(ctx.currentTime+1) }catch(e){} }); };
+  if (layer.gen==='loons'){ loonLayer(out, r); return r; }
   if (layer.synth){
     const [type,cut,lvl]=layer.synth, s=ctx.createBufferSource(), lp=ctx.createBiquadFilter(), g=ctx.createGain();
     s.buffer=noiseBuf(type); s.loop=true; lp.type='lowpass'; lp.frequency.value=cut; g.gain.value=lvl;
@@ -289,6 +290,66 @@ function runLayer(layer, out){
     s.start(); r.src.push(s);
   }).catch(e=>console.error('Could not load',layer.src,e));
   return r;
+}
+
+/* ============ distant loons (generated) ============ */
+let lakeIR=null;
+function makeLakeIR(){
+  const sr=ctx.sampleRate, len=Math.floor(sr*4.2), b=ctx.createBuffer(2,len,sr);
+  for (let ch=0; ch<2; ch++){ const d=b.getChannelData(ch); let lp=0;
+    for (let i=0;i<len;i++){ const t=i/sr; lp+=((Math.random()*2-1)-lp)*.12; d[i]=lp*Math.exp(-t*1.25)*(t<.08?t/.08:1); }
+    [.21,.37,.58].forEach((t,k)=>{ const i=Math.floor((t+ch*.02)*sr); for (let j=0;j<400;j++) d[i+j]+=(Math.random()*2-1)*.25/(k+1)*Math.exp(-j/120); }); }
+  return b;
+}
+let loonWave=null;
+function loonVoice(){
+  if (!loonWave){ const re=new Float32Array([0,0,0,0,0]), im=new Float32Array([0,1,.22,.07,.02]); loonWave=ctx.createPeriodicWave(re,im); }
+  const o=ctx.createOscillator(); o.setPeriodicWave(loonWave); return o;
+}
+/* one call: the rising wail (often with its upward break), or the quavering tremolo */
+function loonCall(dst, t, base, level){
+  const o=loonVoice(), g=ctx.createGain(), vib=ctx.createOscillator(), vg=ctx.createGain(), f=o.frequency;
+  vib.frequency.value=4.5+Math.random()*1.5; vg.gain.value=base*.006; vib.connect(vg).connect(f);
+  g.gain.setValueAtTime(0,t); o.connect(g).connect(dst);
+  let end;
+  if (Math.random()<.72){
+    const hold=1.1+Math.random()*.6, brk=Math.random()<.7;
+    f.setValueAtTime(base*.6,t); f.linearRampToValueAtTime(base*.97,t+.35); f.linearRampToValueAtTime(base,t+hold);
+    g.gain.linearRampToValueAtTime(level,t+.3); g.gain.setValueAtTime(level*.92,t+hold);
+    if (brk){
+      const hi=base*(1.3+Math.random()*.08), h2=t+hold+.12, len=.8+Math.random()*.5;
+      f.exponentialRampToValueAtTime(hi,h2); f.linearRampToValueAtTime(hi*.985,h2+len);
+      f.linearRampToValueAtTime(base*1.12,h2+len+.45);
+      g.gain.linearRampToValueAtTime(level*1.05,h2); g.gain.setValueAtTime(level,h2+len);
+      end=h2+len+.5;
+    } else {
+      f.linearRampToValueAtTime(base*.88,t+hold+.6); end=t+hold+.65;
+    }
+    g.gain.linearRampToValueAtTime(0,end);
+  } else {
+    const dur=1.3+Math.random()*.8, am=ctx.createOscillator(), amg=ctx.createGain(), hi=base*1.22;
+    f.setValueAtTime(hi*.92,t); f.linearRampToValueAtTime(hi,t+.15); f.linearRampToValueAtTime(hi*.97,t+dur);
+    am.frequency.value=9+Math.random()*2.5; amg.gain.value=level*.45; am.connect(amg).connect(g.gain);
+    g.gain.linearRampToValueAtTime(level*.55,t+.08); g.gain.setValueAtTime(level*.55,t+dur-.15); g.gain.linearRampToValueAtTime(0,t+dur);
+    am.start(t); am.stop(t+dur+.05); end=t+dur;
+  }
+  o.start(t); vib.start(t); o.stop(end+.05); vib.stop(end+.05);
+}
+function loonLayer(out, r){
+  if (!lakeIR) lakeIR=makeLakeIR();
+  const voice=(pan,cut)=>{ const lp=ctx.createBiquadFilter(), dry=ctx.createGain(), wet=ctx.createGain(), cv=ctx.createConvolver(), p=ctx.createStereoPanner?ctx.createStereoPanner():ctx.createGain();
+    lp.type='lowpass'; lp.frequency.value=cut; dry.gain.value=.3; wet.gain.value=.9; cv.buffer=lakeIR; if (p.pan) p.pan.value=pan;
+    lp.connect(dry).connect(p); lp.connect(cv).connect(wet).connect(p); p.connect(out); return lp; };
+  const near=voice(-.35,2400), far=voice(.55,1500);
+  const schedule=(first)=>{
+    if (!r.alive) return;
+    const t=ctx.currentTime+.1, base=720+Math.random()*120;
+    loonCall(near, t, base, .2);
+    if (Math.random()<.55) loonCall(far, t+3.5+Math.random()*3, base*(.9+Math.random()*.06), .11);
+    if (Math.random()<.25) loonCall(near, t+5+Math.random()*2, base, .16);
+    r.tm.push(setTimeout(()=>schedule(false), (first?16:20+Math.random()*30)*1000));
+  };
+  r.tm.push(setTimeout(()=>schedule(true), 2500+Math.random()*2500));
 }
 
 /* ============ interface sounds ============ */
