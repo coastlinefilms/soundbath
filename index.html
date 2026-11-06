@@ -184,7 +184,7 @@
 </div>
 
 <script>
-const AUDIO={boat:'sounds/boat.m4a',waves:'sounds/waves.m4a',birds:'sounds/birds.m4a',lapping:'sounds/lapping.m4a',bubbles:'sounds/bubbles.m4a',rain:'sounds/rain.m4a',pouring:'sounds/pouring.m4a',surface:'sounds/surface.m4a',thunder:'sounds/thunder.m4a',stormwind:'sounds/stormwind.m4a',fire:'sounds/fire.m4a',crickets:'sounds/crickets.m4a',bugs:'sounds/bugs.m4a',stream:'sounds/stream.m4a',chimes:'sounds/chimes.m4a',tropical:'sounds/tropical.m4a',train:'sounds/train.m4a',coffee:'sounds/coffee.m4a',street:'sounds/street.m4a',chatter:'sounds/chatter.m4a'};
+const AUDIO={boat:'sounds/boat.m4a',waves:'sounds/waves.m4a',birds:'sounds/birds.m4a',lapping:'sounds/lapping.m4a',bubbles:'sounds/bubbles.m4a',rain:'sounds/rain.m4a',pouring:'sounds/pouring.m4a',surface:'sounds/surface.m4a',thunder:'sounds/thunder.m4a',stormwind:'sounds/stormwind.m4a',fire:'sounds/fire.m4a',crickets:'sounds/crickets.m4a',bugs:'sounds/bugs.m4a',stream:'sounds/stream.m4a',chimes:'sounds/chimes.m4a',tropical:'sounds/tropical.m4a',train:'sounds/train.m4a',coffee:'sounds/coffee.m4a',street:'sounds/street.m4a',chatter:'sounds/chatter.m4a',sails:'sounds/sails.m4a'};
 </script>
 <script>
 /* ============ icons ============ */
@@ -216,6 +216,7 @@ const P = {
   sine:'<path d="M2 12c2.5-7 5-7 7.5 0s5 7 7.5 0 3.5-4 5-4"/>',
   tape:'<rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="8.5" cy="12" r="2"/><circle cx="15.5" cy="12" r="2"/><path d="M8.5 14h7"/>',
   grey:'<path d="M3 12h3l1.5-3 2 6 2-9 2 12 2-8 1.5 4H21"/>',
+  sails:'<path d="M6 3v16"/><path d="M6 4c5 1.5 9 5 10.5 11H6"/><path d="M6 15c3.5 0 7 .5 11 2.5"/><path d="M3 21h18"/><path d="M18 5.5c1.2.6 2.2 1.6 3 3M17.5 9c.8.4 1.4 1 2 1.8"/>',
   noise:'<path d="M3 12h2l2-5 3 10 3-12 3 14 2-7h3"/>'
 };
 const icon = k => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${P[k]}</svg>`;
@@ -225,7 +226,7 @@ const PAUSE = '<svg viewBox="0 0 24 24"><rect x="6" y="4.5" width="4" height="15
 /* ============ scenes ============ */
 const f = (id,name,ic,def) => ({id,name,icon:ic,def,src:id});
 const SCENES = {
-  ocean:{photo:'photo-1636730740168-c94f3ab802e6',focus:'50% 55%',name:'Ocean',bg:'#23506E',accent:'#A9DDEB',icon:'ship',layers:[f('boat','Boat','sail',1),f('waves','Waves','waves',.2),f('birds','Birds','birds',.2),f('lapping','Lapping','splash',.4),f('bubbles','Bubbles','bubbles',1)]},
+  ocean:{photo:'photo-1636730740168-c94f3ab802e6',focus:'50% 55%',name:'Ocean',bg:'#23506E',accent:'#A9DDEB',icon:'ship',layers:[f('boat','Boat','sail',1),f('waves','Waves','waves',.2),f('birds','Birds','birds',.2),f('lapping','Lapping','splash',.4),f('bubbles','Bubbles','bubbles',1),f('sails','Sails','sails',.4)]},
   storm:{photo:'photo-1534852654286-120d822937f7',focus:'52% 50%',name:'Rainstorm',bg:'#3B4658',accent:'#C6D3E8',icon:'thunder',layers:[f('rain','Rain','rain',.8),f('pouring','Downpour','pour',.3),f('surface','Rain on glass','drop',.5),f('thunder','Thunder','thunder',.4),f('stormwind','Wind','wind',.3)]},
   camp:{photo:'photo-1700900345238-428c7fb0155e',focus:'66% 60%',name:'Campfire',bg:'#93401F',accent:'#FFC48F',icon:'fire',layers:[f('fire','Fire','fire',.9),f('crickets','Crickets','cricket',.5),f('lapping','Lake shore','waves',.35),f('stormwind','Breeze in the pines','wind',.15),{id:'loons',name:'Distant loons',icon:'birds',def:.6,gen:'loons'}]},
   jungle:{photo:'photo-1591081658714-f576fb7ea3ed',focus:'38% 50%',name:'Jungle',bg:'#2A5B42',accent:'#BDE6A6',icon:'leaf',layers:[f('tropical','Tropical birds','leaf',.8),f('stream','Stream','stream',.5),f('bugs','Insects','bug',.4),f('surface','Light rain','drop',.2),f('chimes','Wind chimes','chimes',.15)]},
